@@ -1,4 +1,11 @@
 class SamlIdentityParams
+  USERNAME_ATTRIBUTES = %w[
+    username
+    preferred_username
+    uid
+    urn:oid:0.9.2342.19200300.100.1.1
+  ].freeze
+
   FULL_NAME_ATTRIBUTES = %w[
     displayName
     name
@@ -38,7 +45,11 @@ class SamlIdentityParams
 
   def initialize(response)
     @name_id = response.nameid.to_s.strip
-    @attributes = normalize_attributes(response.attributes)
+    attributes = response.attributes
+    @attributes_raw = attributes.each_with_object({}) do |(key, value), result|
+      result[key.to_s.downcase] = Array(value).first.presence
+    end
+    @attributes = normalize_attributes(attributes)
   end
 
   def to_h
@@ -47,6 +58,7 @@ class SamlIdentityParams
       uid: @name_id,
       email: email,
       name: name,
+      username: username,
       access_token: nil
     }
   end
@@ -65,6 +77,14 @@ class SamlIdentityParams
     return @name_id if EmailValidator::EMAIL_REGEXP.match?(@name_id)
 
     attribute(EMAIL_ATTRIBUTES)
+  end
+
+  # Preserve the provider value exactly; user validation reports unsupported
+  # handles instead of silently changing the identity supplied by SSO.
+  def username
+    configured_attribute = AppConfig.saml_attribute_username
+    names = configured_attribute ? [configured_attribute] : USERNAME_ATTRIBUTES
+    names.filter_map { |name| @attributes_raw[name.downcase] }.first
   end
 
   def name

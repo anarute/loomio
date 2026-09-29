@@ -64,6 +64,10 @@ class AppConfig
     ENV['SAML_ATTR_EMAIL'].presence
   end
 
+  def self.saml_attribute_username
+    ENV['SAML_ATTR_USERNAME'].presence
+  end
+
   def self.saml_attribute_name
     ENV['SAML_ATTR_NAME'].presence
   end

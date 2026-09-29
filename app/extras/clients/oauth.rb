@@ -11,6 +11,7 @@ class Clients::Oauth < Clients::Base
     data = get(ENV.fetch('OAUTH_PROFILE_URL')).json
     {
       uid: data.dig(ENV.fetch('OAUTH_ATTR_UID', 'sub')),
+      username: data.dig(ENV.fetch('OAUTH_ATTR_USERNAME', 'preferred_username')),
       name: data.dig(ENV.fetch('OAUTH_ATTR_NAME', 'name')),
       email: data.dig(ENV.fetch('OAUTH_ATTR_EMAIL', 'email')),
       logo: data.dig(ENV.fetch('OAUTH_ATTR_PICTURE', 'picture'))

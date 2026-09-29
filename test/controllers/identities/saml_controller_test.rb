@@ -9,6 +9,7 @@ class Identities::SamlControllerTest < ActionController::TestCase
       SAML_IDP_METADATA_URL
       SAML_ISSUER
       SAML_ATTR_EMAIL
+      SAML_ATTR_USERNAME
       SAML_ATTR_NAME
       SAML_ATTR_GIVEN_NAME
       SAML_ATTR_FAMILY_NAME
@@ -133,6 +134,29 @@ class Identities::SamlControllerTest < ActionController::TestCase
   end
 
   public
+
+  test "uses the configured SAML username for an invited account" do
+    ENV['SAML_ATTR_USERNAME'] = 'accountLogin'
+    user = User.create!(email: 'samltest@example.com', username: 'invited_random123')
+    provider_response = mock_saml_response(attributes: { 'displayName' => 'SSO Person', 'accountLogin' => 'sso_person' })
+    with_saml_mocks(saml_response: provider_response) do
+      post :create, params: { SAMLResponse: 'response' }
+    end
+    assert_response :redirect
+    assert_equal 'sso_person', user.reload.username
+    assert_equal user.id, @controller.current_user.id
+  end
+
+  test "a conflicting SAML username cannot create a session or account" do
+    provider_response = mock_saml_response(attributes: { 'displayName' => 'SSO Person', 'uid' => users(:member_loud).username })
+    assert_no_difference ['Session.count', 'User.count', 'Identity.count'] do
+      with_saml_mocks(saml_response: provider_response) do
+        post :create, params: { SAMLResponse: 'response' }, format: :json
+      end
+    end
+    assert_response :unprocessable_entity
+    assert_not @controller.current_user.is_logged_in?
+  end
 
   # Create tests - user does not exist
   [true, false].each do |complete|

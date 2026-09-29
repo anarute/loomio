@@ -6,7 +6,7 @@ class Identities::OauthControllerTest < ActionController::TestCase
     # Set required ENV variables for OAuth
     @saved_env = {}
     %w[OAUTH_AUTH_URL OAUTH_TOKEN_URL OAUTH_PROFILE_URL OAUTH_SCOPE
-       OAUTH_ATTR_UID OAUTH_ATTR_NAME OAUTH_ATTR_EMAIL OAUTH_APP_KEY OAUTH_APP_SECRET
+       OAUTH_ATTR_USERNAME OAUTH_ATTR_UID OAUTH_ATTR_NAME OAUTH_ATTR_EMAIL OAUTH_APP_KEY OAUTH_APP_SECRET
        LOOMIO_DISABLE_EDIT_USER_PROFILE LOOMIO_SSO_FORCE_USER_ATTRS
        LOOMIO_SSO_UPDATE_USER_PROFILE_ON_LOGIN TERMS_URL].each do |key|
       @saved_env[key] = ENV[key]
@@ -16,6 +16,7 @@ class Identities::OauthControllerTest < ActionController::TestCase
     ENV['OAUTH_TOKEN_URL'] = 'https://oauth.provider.com/token'
     ENV['OAUTH_PROFILE_URL'] = 'https://oauth.provider.com/userinfo'
     ENV['OAUTH_SCOPE'] = 'openid profile email'
+    ENV.delete('OAUTH_ATTR_USERNAME')
     ENV['OAUTH_ATTR_UID'] = 'sub'
     ENV['OAUTH_ATTR_NAME'] = 'name'
     ENV['OAUTH_ATTR_EMAIL'] = 'email'
@@ -47,6 +48,29 @@ class Identities::OauthControllerTest < ActionController::TestCase
   teardown do
     @saved_env.each { |key, val| ENV[key] = val }
     WebMock.reset!
+  end
+
+  test "imports the configured provider username and rejects collisions before creating a session" do
+    ENV['OAUTH_ATTR_USERNAME'] = 'login'
+    ['provider_handle', users(:member_loud).username].each_with_index do |username, index|
+      stub_request(:get, ENV['OAUTH_PROFILE_URL']).to_return(
+        status: 200,
+        body: { sub: 'username-test', name: 'SSO Person', email: 'username-test@example.com', login: username }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+      if index.zero?
+        get :create, params: oauth_callback_params(code: 'code'), format: :json
+        assert_response :redirect
+        assert_equal username, User.find_by!(email: 'username-test@example.com').username
+        @controller.send(:sign_out)
+      else
+        assert_no_difference 'Session.count' do
+          get :create, params: oauth_callback_params(code: 'code'), format: :json
+        end
+        assert_response :unprocessable_entity
+        assert_not @controller.current_user.is_logged_in?
+      end
+    end
   end
 
   # OAuth redirect tests
