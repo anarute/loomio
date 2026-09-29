@@ -208,6 +208,7 @@ ACTIVE_STORAGE_SERVICE=local
 # These defaults match the standard OIDC claim names. Only set them when your
 # provider uses different field names.
 # OAUTH_ATTR_UID=sub
+# OAUTH_ATTR_USERNAME=preferred_username
 # OAUTH_ATTR_NAME=name
 # OAUTH_ATTR_EMAIL=email
 # OAUTH_ATTR_PICTURE=picture
@@ -215,7 +216,15 @@ ACTIVE_STORAGE_SERVICE=local
 # the label used for the SSO login button. The user will see this value when they're prompted to log in using SSO.
 # OAUTH_LOGIN_PROVIDER_NAME=Company auth
 
+# SAML usernames are read from username, preferred_username, or uid attributes.
+# Override the attribute name for providers with a different mapping.
+# SAML_ATTR_USERNAME=username
+
 ### SSO-managed profiles (optional)
+
+# A supplied SSO username is preserved exactly on every login, including for
+# previously invited accounts. Missing usernames leave the Loomio handle unchanged.
+# Usernames must be unique and satisfy Loomio's username validation.
 
 # Update the user's name and email from SSO each time they log in. When the SSO
 # response includes a non-blank profile picture, update the Loomio avatar too.

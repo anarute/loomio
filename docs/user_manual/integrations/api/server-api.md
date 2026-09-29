@@ -264,6 +264,10 @@ Returns:
 
 ## SSO Profile Sync Settings
 
+SSO sign-in uses the provider's username exactly when one is supplied, including replacing the generated handle on an invited account. OAuth reads `preferred_username` by default; set `OAUTH_ATTR_USERNAME` for another profile field. Nextcloud uses its account ID. SAML reads `username`, `preferred_username`, `uid`, or the standard UID OID attribute; set `SAML_ATTR_USERNAME` to select a different attribute. Providers that supply no username leave existing handles unchanged and use normal username generation for new accounts.
+
+This username synchronization applies on every SSO login, independently of the optional name and email synchronization settings below. A supplied username must be unique, at most 30 characters, and use lowercase letters, digits, underscores, or hyphens between non-empty segments. If it conflicts with another account or fails validation, sign-in is rejected; Loomio does not append a suffix or link accounts by username. Existing accounts receive the provider username on their next SSO login.
+
 Use these settings when another system manages Loomio profile fields.
 
 ```env
