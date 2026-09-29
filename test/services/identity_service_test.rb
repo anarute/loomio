@@ -11,6 +11,86 @@ class IdentityServiceTest < ActiveSupport::TestCase
     }
   end
 
+  test "uses the exact provider username for a new account" do
+    identity = IdentityService.link_or_create(identity_params: @identity_params.merge(username: 'sso_person-one'), current_user: nil)
+    assert_equal 'sso_person-one', identity.user.reload.username
+    assert_equal 'sso_person-one', identity.reload.username
+  end
+
+  test "replaces an invitation username on first and subsequent SSO logins" do
+    UserInviter.send(:users_insert_all, emails: [@identity_params[:email]], actor: users(:member_loud))
+    user = User.find_by!(email: @identity_params[:email])
+    assert_match(/oauthuser[a-z0-9]{12}/, user.username)
+
+    IdentityService.stub(:update_user_profile_on_login?, false) do
+      ['sso_person', 'sso_person_new'].each do |username|
+        identity = IdentityService.link_or_create(identity_params: @identity_params.merge(username: username), current_user: nil)
+        assert_equal user.id, identity.user_id
+        assert_equal username, user.reload.username
+      end
+    end
+  end
+
+  test "missing provider username preserves an existing handle" do
+    user = User.create!(email: @identity_params[:email], name: 'Existing', username: 'existing_handle')
+    IdentityService.link_or_create(identity_params: @identity_params, current_user: nil)
+    assert_equal 'existing_handle', user.reload.username
+  end
+
+  test "a later login without a username does not reapply a stale provider handle" do
+    identity = IdentityService.link_or_create(identity_params: @identity_params.merge(username: 'provider_handle'), current_user: nil)
+    identity.user.update!(username: 'local_handle')
+    IdentityService.link_or_create(identity_params: @identity_params, current_user: nil)
+    assert_equal 'local_handle', identity.user.reload.username
+    assert_nil identity.reload.username
+  end
+
+  test "username collisions do not link another account or partially verify an invitation" do
+    owner = users(:member_loud)
+    invited = User.create!(email: @identity_params[:email], username: 'invited_handle')
+    assert_no_difference ['Identity.count', 'User.count'] do
+      assert_raises(ActiveRecord::RecordInvalid) do
+        IdentityService.link_or_create(identity_params: @identity_params.merge(username: owner.username), current_user: nil)
+      end
+    end
+    assert_equal 'invited_handle', invited.reload.username
+    assert_not invited.email_verified?
+    assert_nil invited.name
+    assert_equal owner.username, owner.reload.username
+  end
+
+  test "invalid provider usernames are rejected without alteration or partial accounts" do
+    ['MixedCase', 'has space', 'a' * 31].each do |username|
+      assert_no_difference ['Identity.count', 'User.count'] do
+        assert_raises(ActiveRecord::RecordInvalid) do
+          IdentityService.link_or_create(identity_params: @identity_params.merge(username: username), current_user: nil)
+        end
+      end
+    end
+  end
+
+  test "rejected returning username rolls back provider email and identity changes" do
+    identity = IdentityService.link_or_create(identity_params: @identity_params.merge(username: 'original_handle'), current_user: nil)
+    IdentityService.stub(:update_user_profile_on_login?, true) do
+      assert_raises(ActiveRecord::RecordInvalid) do
+        IdentityService.link_or_create(identity_params: @identity_params.merge(username: users(:member_loud).username, email: 'changed@example.com'), current_user: nil)
+      end
+    end
+    assert_equal @identity_params[:email], identity.reload.email
+    assert_equal @identity_params[:email], identity.user.reload.email
+    assert_equal 'original_handle', identity.user.username
+  end
+
+  test "signed in account is unchanged until pending identity is explicitly linked" do
+    user = users(:member_loud)
+    original = user.username
+    identity = IdentityService.link_or_create(identity_params: @identity_params.merge(username: 'pending_handle'), current_user: user)
+    assert_nil identity.user_id
+    assert_equal original, user.reload.username
+    assert identity.link_to_user!(user)
+    assert_equal 'pending_handle', user.reload.username
+  end
+
   test "creates new identity and new user when no user exists" do
     identity = IdentityService.link_or_create(
       identity_params: @identity_params,

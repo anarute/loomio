@@ -1,6 +1,7 @@
 class Identity < ApplicationRecord
   extend HasCustomFields
   self.table_name = :omniauth_identities
+  set_custom_fields :username
 
   validates :identity_type, presence: true
   validates :uid, presence: true
@@ -19,6 +20,7 @@ class Identity < ApplicationRecord
     with_lock do
       return false if user_id.present? || !user.active?
 
+      user.update!(username: username) if username.present?
       update!(user: user)
     end
   end

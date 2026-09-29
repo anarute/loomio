@@ -15,13 +15,19 @@ class IdentityService
   #
   # @return [Identity] The linked or created identity
   def self.link_or_create(identity_params:, current_user:)
-    identity = find_or_create_identity(identity_params: identity_params, current_user: current_user)
-    refresh_identity(identity, identity_params: identity_params)
-
-    return identity unless identity.user
-
-    sync_user_profile(identity)
-    sync_user_avatar(identity)
+    # A rejected provider username must roll back account linking and profile
+    # updates together. Match accounts only by provider UID/email, never handle.
+    identity = Identity.transaction do
+      record = find_or_create_identity(identity_params: identity_params, current_user: current_user)
+      refresh_identity(record, identity_params: identity_params)
+      if record.user
+        record.user.username = record.username if record.username.present?
+        sync_user_profile(record)
+        record.user.save! if record.user.changed?
+      end
+      record
+    end
+    sync_user_avatar(identity) if identity.user
 
     identity
   end
@@ -57,7 +63,7 @@ class IdentityService
       identity.user.email_verified = true
       identity.user.save! if identity.user.changed?
     else
-      identity.user = User.new(name: identity.name, email: identity.email, email_verified: true)
+      identity.user = User.new(name: identity.name, email: identity.email, username: identity.username.presence, email_verified: true)
       Sentry.set_context(
         'identity_params',
         identity.attributes.slice('identity_type', 'uid', 'email', 'name')
@@ -68,7 +74,7 @@ class IdentityService
   private_class_method :assign_user_for_new_identity
 
   def self.refresh_identity(identity, identity_params:)
-    identity.assign_attributes(identity_params)
+    identity.assign_attributes(identity_params.reverse_merge(username: nil))
     Identity.transaction do
       if identity.user
         # Invitations create nameless placeholder users. Initialize their name
@@ -84,7 +90,7 @@ class IdentityService
   def self.sync_user_profile(identity)
     return unless update_user_profile_on_login?
 
-    identity.user.update(name: identity.name, email: identity.email)
+    identity.user.assign_attributes(name: identity.name, email: identity.email)
   end
   private_class_method :sync_user_profile
 

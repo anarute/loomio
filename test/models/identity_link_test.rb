@@ -5,6 +5,15 @@ class IdentityLinkTest < ActiveSupport::TestCase
     @identity = Identity.create!(identity_type: 'oauth', uid: 'link-test', email: users(:member_loud).email)
   end
 
+  test 'a username collision leaves the pending identity and both accounts unchanged' do
+    user = users(:member_loud)
+    username_before = user.username
+    @identity.update!(username: users(:alien_loud).username)
+    assert_raises(ActiveRecord::RecordInvalid) { @identity.link_to_user!(user) }
+    assert_nil @identity.reload.user_id
+    assert_equal username_before, user.reload.username
+  end
+
   test 'only active accounts can link a pending identity' do
     assert_not @identity.link_to_user!(users(:inactive_member_loud))
     assert_nil @identity.reload.user_id
@@ -21,10 +30,13 @@ class IdentityLinkTest < ActiveSupport::TestCase
   end
 
   test 'failed linking leaves the identity pending for retry' do
+    @identity.update!(username: 'pending_handle')
+    username_before = users(:member_loud).username
     @identity.stub(:update!, ->(**) { raise ActiveRecord::RecordInvalid, @identity }) do
       assert_raises(ActiveRecord::RecordInvalid) { @identity.link_to_user!(users(:member_loud)) }
     end
     assert_nil @identity.reload.user_id
+    assert_equal username_before, users(:member_loud).reload.username
     assert @identity.link_to_user!(users(:member_loud))
   end
 end
